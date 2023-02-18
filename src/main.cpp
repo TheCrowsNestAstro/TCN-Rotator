@@ -203,7 +203,6 @@ void setup()
  ******************************************/
 void loop()
 {
-  Serial1.println("Hello");
   server->handleClient();
   serialCommand->serialRead();
   CheckForDiscovery();
