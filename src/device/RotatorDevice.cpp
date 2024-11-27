@@ -1,40 +1,36 @@
 #include "device/RotatorDevice.h"
 
+
 RotatorDevice::RotatorDevice()
 {
     pinMode(STEP_PIN, OUTPUT);
     pinMode(DIR_PIN, OUTPUT);
     pinMode(EN_PIN, OUTPUT);
 
-    // pinMode(EN_PIN, OUTPUT);
-
     digitalWrite(STEP_PIN, LOW);
     digitalWrite(DIR_PIN, LOW);
     digitalWrite(EN_PIN, LOW);
 
     stepper = new AccelStepper(AccelStepper::DRIVER, STEP_PIN, DIR_PIN);
-    /*
-    setMaxSpeed Info
+    stepper->setMaxSpeed(STEPPER_SPEED);  
+    stepper->setSpeed(STEPPER_SPEED);
+    stepper->setAcceleration(STEPPER_ACCELERATION);
 
-    5000 works good
-    500000 for confrom test
-    1000 geared rotator
-    10000 for geared stepper
-    200 for non-geared large stepper(500 max) also may depend on what else is on loop()
-    */
-    stepper->setMaxSpeed(500.0f);
+    // EEPROM
+    EEPROM.begin(16);
+    EEPROM.get(0, _storedTargetPosition);
+    Serial.print("Read back a variable 2 from EEPROM: ");
+    Serial.println(_storedTargetPosition);
 
-    /*
-    1000 for geared rotator
-    10000 for geared stepper
-    1000 for non-geared large stepper
-    */
-    stepper->setAcceleration(1000.0f);
-
-    stepper->setCurrentPosition(0);
-    // stepper->setCurrentPosition(readFocuserPos());
-    // stepper->setSpeed(45);
-    // stepper->moveTo(400*9);
+    if(_storedTargetPosition)
+    {
+        stepper->setCurrentPosition(0);
+    }
+    else
+    {
+        stepper->setCurrentPosition(0);
+    }
+    
 }
 
 /*
@@ -104,7 +100,6 @@ The minimum StepSize, in degrees.
 */
 double RotatorDevice::getStepSize()
 {
-    _stepSize = 0.9;
     return _stepSize;
 }
 
@@ -147,9 +142,19 @@ Causes the rotator to move Position degrees relative to the current Position val
 void RotatorDevice::putMove(long position)
 {
     Log.traceln("RotatorDevice::putMove(long position)");
-    Log.traceln("RotatorDevice::putMove(double position)");
+    //Log.infoln("putMove");
+    //Log.infoln("In position: %d" CR, position);
     _targetPosition = stepper->currentPosition() + (STEPS_PER_DEGREE * position);
     stepper->moveTo(_targetPosition);
+    _positionStored = false;
+
+    //_targetPosition = (400*1*32)*7.8125f;
+    //stepper->moveTo(_targetPosition);
+
+    Log.infoln("Target position: %d" CR, _targetPosition);
+    //stepper->moveTo(_targetPosition);
+
+    
 }
 
 /*
@@ -159,6 +164,8 @@ Causes the rotator to move the absolute position of Position degrees.
 void RotatorDevice::putMoveAbsolute(double position)
 {
     Log.traceln("RotatorDevice::putMoveAbsolute(double position)");
+    Log.infoln("putMoveAbsolute");
+    Log.infoln("Target position: %d" CR, position);
     _targetPosition = position;
 }
 
@@ -169,6 +176,7 @@ Causes the rotator to move the mechanical position of Position degrees.
 void RotatorDevice::putMoveMechanical(double position)
 {
     Log.traceln("RotatorDevice::putMoveMechanical(double position)");
+    Log.infoln("putMoveMechanical");
     long steps = STEPS_PER_DEGREE * position;
     _targetMechanicalPosition = steps;
 }
@@ -180,35 +188,41 @@ Causes the rotator to sync to the position of Position degrees.
 void RotatorDevice::putSync(double position)
 {
     _targetMechanicalPosition = position;
+    stepper->setCurrentPosition(position * STEPS_PER_DEGREE);
+
 }
 
 void RotatorDevice::findHome()
 {
+    Log.infoln("Finding Home");
     /*
     HEState = digitalRead(HOME_PIN);
+    Serial.println(HEState);
     // Serial.println("Finding Home");  // leave for testing
     homeFound = false;
     findingHome = true;
-    if (HEState == HIGH)
+    if (HEState == LOW)
     {                                                                     // sensor goes low by magnet
-        moveStepper(stepper.currentPosition() - findHomeStepSize, false); // ***  adjust speed by changing the -x number 100 seems to work well
-
+        stepper->moveTo(stepper->currentPosition() - findHomeStepSize * STEPS_PER_DEGREE); // ***  adjust speed by changing the -x number 100 seems to work well
         findingHome = true;
     }
-    if (HEState == LOW)
+    if (HEState == HIGH)
     {
         if (digitalRead(HOME_PIN) == LOW)
         { // double check sensor state
             homeFound = true;
             findingHome = false;
-            saveCurrentPos(maxSteps / 2); // allow for 2 complete revolustions.  centered at 360 degrees
-            Serial.print("H ");
-            Serial.print("true"); // true
-            Serial.println("#");  //  add stop bit
-            Serial.println(HEState);
+            Log.infoln("Home found!");
+            stepper->setCurrentPosition(0);
+            //saveCurrentPos(maxSteps / 2); // allow for 2 complete revolustions.  centered at 360 degrees
+            //Serial.print("H ");
+            //Serial.print("true"); // true
+            //Serial.println("#");  //  add stop bit
+            //Serial.println(HEState);
         }
     }
     */
+    
 }
 // ------------------------------------------------------------------
 
@@ -223,14 +237,27 @@ void RotatorDevice::update()
     if (stepper->distanceToGo() == 0)
     {
         _isMoving = false;
-        // stepper->moveTo(_targetPosition);
+        
+        if(_positionStored != true)
+        {
+            //EEPROM.put(eeAddress, stepper->currentPosition());
+            //EEPROM.commit();
+            EEPROM.put(0, _targetPosition);  // long - so 8 bytes (next address would be '12')
+            boolean ok1 = EEPROM.commit();
+            Serial.println((ok1) ? "First commit OK" : "Commit failed");
+            _positionStored = true;
+            Log.infoln("Position stored!");
+        }
     }
     else
     {
         _isMoving = true;
+        stepper->run();
     }
 
-    stepper->run();
+    // stepper->run();
+    
+
     /*
     if (_isFindingHome == true)
     {

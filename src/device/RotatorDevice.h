@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <ArduinoLog.h>
 #include <AccelStepper.h>
+#include <ESP_EEPROM.h>
 #include "configuration.hpp"
 
 class RotatorDevice
@@ -10,6 +11,7 @@ class RotatorDevice
     public:
         RotatorDevice();
         AccelStepper* stepper;
+        //TMC2209Stepper* driver;
 
         bool connected = false;
         String uniqueID = "";
@@ -35,15 +37,20 @@ class RotatorDevice
 
     private:
         bool _isFindingHome = false;
+        int HEState;
+        bool homeFound = false;
+        bool findingHome = false;
+        float findHomeStepSize = 180.0f;
 
         bool _canReverse = true;
         bool _isMoving = false;
         double _mechanicalPosition = 0.0; // Degrees
         double _position = 0.0; // Degrees
         bool _reverseState = false;
-        double _stepSize = 0.0;
+        double _stepSize = MIN_STEP_SIZE; //0.9;
         long _targetPosition = 0.0;
         double _targetMechanicalPosition = 0.0;
+        
 
         bool _halt = false;
 
@@ -55,4 +62,9 @@ class RotatorDevice
 
         //void writeRelayData(int relay, int boolValue, double doubleValue);
         //byte relayData = B00000000;
+
+        // EEPROM
+        bool _positionStored = true;
+        int eeAddress = 0;
+        long _storedTargetPosition = 0.0;
 };
