@@ -2,6 +2,7 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPUpdateServer.h>
 #include <ArduinoLog.h>
+#include "ESPAsyncUDP.h"
 
 #include "arduino_secrets.h"
 #include "SerialCommand.h"
@@ -23,53 +24,13 @@ char packetBuffer[255]; // buffer to hold incoming packet
 ESP8266WebServer *server = new ESP8266WebServer(alpacaPort);
 
 ESP8266HTTPUpdateServer updater;
-WiFiUDP Udp;
+AsyncUDP udp;
 
 
 RotatorDevice* rotatorDevice = new RotatorDevice();
 RotatorHandler *rotatorHandler = new RotatorHandler(server, rotatorDevice);
 SerialCommand* serialCommand = new SerialCommand(rotatorDevice);
 
-void CheckForDiscovery()
-{
-  // if there's data available, read a packet
-  int packetSize = Udp.parsePacket();
-  if (packetSize)
-  {
-    Log.traceln("Received packet of size: %d" CR, packetSize);
-    IPAddress remoteIp = Udp.remoteIP();
-    Log.traceln("From %s , on port %d" CR, remoteIp.toString().c_str(), Udp.remotePort());
-
-    // read the packet into packetBufffer
-    int len = Udp.read(packetBuffer, 255);
-    if (len > 0)
-    {
-      // Ensure that it is null terminated
-      packetBuffer[len] = 0;
-    }
-    Log.traceln("Contents: %s" CR, packetBuffer);
-
-    // No undersized packets allowed
-    if (len < 16)
-    {
-      return;
-    }
-
-    if (strncmp("alpacadiscovery1", packetBuffer, 16) != 0)
-    {
-      return;
-    }
-
-    char response[36] = {0};
-    sprintf(response, "{\"AlpacaPort\": %d}", alpacaPort);
-
-    uint8_t buffer[36] = "{\"AlpacaPort\": 11111}";
-
-    Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
-    Udp.write(buffer, 36);
-    Udp.endPacket();
-  }
-}
 
 void printWifiStatus()
 {
@@ -126,7 +87,7 @@ void handleDriver0Sync() { rotatorHandler->handlerDriver0Sync(); }
  ******************************************/
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.setTimeout(2000);
 
   // Initialize with log level and log output.
@@ -193,9 +154,47 @@ void setup()
   updater.setup(server);
   server->begin();
   Log.infoln("Alpaca server handlers setup & started...");
+  // Udp.begin(localPort);
+  if (udp.listen(32227))
+  {
+      Serial.println("Listening for discovery requests...");
+      udp.onPacket([](AsyncUDPPacket packet) {
+          Serial.print("Received UDP Packet of Type: ");
+          Serial.print(packet.isBroadcast() ? "Broadcast" : packet.isMulticast() ? "Multicast" : "Unicast");
+          Serial.print(", From: ");
+          Serial.print(packet.remoteIP());
+          Serial.print(":");
+          Serial.print(packet.remotePort());
+          Serial.print(", To: ");
+          Serial.print(packet.localIP());
+          Serial.print(":");
+          Serial.print(packet.localPort());
+          Serial.print(", Length: ");
+          Serial.print(packet.length());
+          Serial.print(", Data: ");
+          Serial.write(packet.data(), packet.length());
+          Serial.println();
+
+          // No undersized packets allowed
+          if (packet.length() < 16)
+          {
+              return;
+          }
+
+          //Compare packet to Alpaca Discovery string
+          if (strncmp("alpacadiscovery1", (char *)packet.data(), 16) != 0)
+          {
+              return;
+          }
+
+          // send a reply, to the IP address and port that sent us the packet we received
+          // on a real system this would be the port the Alpaca API was on
+          packet.printf("{\"AlpacaPort\": %d}", alpacaPort);
+      });
+  }
   Log.infoln("Listening for Alpaca discovery requests...");
 
-  Udp.begin(localPort);
+ 
 }
 
 /******************************************
@@ -205,6 +204,6 @@ void loop()
 {
   server->handleClient();
   serialCommand->serialRead();
-  CheckForDiscovery();
+  // CheckForDiscovery();
   rotatorDevice->update();
 }

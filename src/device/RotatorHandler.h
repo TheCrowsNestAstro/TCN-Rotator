@@ -72,5 +72,12 @@ class RotatorHandler
 
         void debugServerQuery();
         void transactionDetails();
+
+        bool checkStringIsNumerical(String myString);
+        bool isFloat(String tString);
+        bool verifyTransactionID();
+        bool checkBoolValue(String valueName);
+        double checkDoubleValue(String valueName);
+        int checkIntValue(String valueName);
         
 };
